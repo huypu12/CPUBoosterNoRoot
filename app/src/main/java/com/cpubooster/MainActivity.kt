@@ -88,4 +88,174 @@ class MainActivity : Activity() {
 
         card {
             label("CHẾ ĐỘ HIỆU NĂNG", 18, neon)
-            actionButton("🎮 Gaming") { setMode("Gaming
+            actionButton("🎮 Gaming") { setMode("Gaming") }
+            actionButton("⚖ Cân bằng") { setMode("Cân bằng") }
+            actionButton("🔋 Tiết kiệm") { setMode("Tiết kiệm") }
+        }
+
+        card {
+            label("CÔNG CỤ", 18, neon)
+            actionButton("📊 Cập nhật thông số") { updateStats() }
+            actionButton("ℹ Giới thiệu giới hạn thiết bị") {
+                android.app.AlertDialog.Builder(this@MainActivity)
+                    .setTitle("CPU Booster No Root")
+                    .setMessage(
+                        "Bản No Root theo dõi các thông số Android cho phép đọc. " +
+                        "Ứng dụng thông thường không thể tự ép xung CPU hoặc " +
+                        "đảm bảo tăng FPS nếu hệ điều hành không cấp quyền."
+                    )
+                    .setPositiveButton("Đóng", null)
+                    .show()
+            }
+        }
+
+        label(
+            "Theo dõi hiệu năng • Không đảm bảo ép xung thật",
+            12,
+            muted
+        )
+    }
+
+    private lateinit var tagBar: ProgressBar
+
+    private fun label(
+        text: String,
+        size: Int,
+        color: Int
+    ): TextView {
+        val v = TextView(this)
+        v.text = text
+        v.textSize = size.toFloat()
+        v.setTextColor(color)
+        v.setPadding(0, 5, 0, 5)
+        content.addView(v)
+        return v
+    }
+
+    private fun card(block: LinearLayout.() -> Unit) {
+        val box = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(16, 14, 16, 14)
+            setBackgroundColor(panel)
+        }
+        val params = LinearLayout.LayoutParams(-1, -2)
+        params.bottomMargin = 16
+        content.addView(box, params)
+
+        val oldContent = content
+        content = box
+        block()
+        content = oldContent
+    }
+
+    private fun space(height: Int) {
+        val v = View(this)
+        content.addView(v, LinearLayout.LayoutParams(1, height))
+    }
+
+    private fun actionButton(
+        text: String,
+        click: () -> Unit
+    ) {
+        val b = Button(this)
+        b.text = text
+        b.setTextColor(neon)
+        b.setBackgroundColor(Color.rgb(31, 48, 45))
+        b.isAllCaps = false
+        b.setOnClickListener { click() }
+
+        val p = LinearLayout.LayoutParams(-1, -2)
+        p.topMargin = 5
+        content.addView(b, p)
+    }
+
+    private fun setMode(mode: String) {
+        getSharedPreferences("settings", MODE_PRIVATE)
+            .edit()
+            .putString("mode", mode)
+            .apply()
+
+        statusText.text = "Chế độ: $mode (chỉ lưu lựa chọn)"
+        android.widget.Toast.makeText(
+            this,
+            "Đã chọn $mode",
+            android.widget.Toast.LENGTH_SHORT
+        ).show()
+    }
+
+    private fun updateStats() {
+        try {
+            val lines = File("/proc/stat").readLines().first()
+                .trim().split(Regex("\\s+"))
+
+            val values = lines.drop(1).mapNotNull { it.toLongOrNull() }
+            if (values.size >= 4) {
+                val idle = values[3] + (values.getOrNull(4) ?: 0L)
+                val total = values.sum()
+                if (lastTotal > 0L && total > lastTotal) {
+                    val deltaTotal = total - lastTotal
+                    val deltaIdle = idle - lastIdle
+                    val usage = (
+                        100.0 * (deltaTotal - deltaIdle) / deltaTotal
+                    ).toInt().coerceIn(0, 100)
+
+                    cpuText.text = "$usage%"
+                    tagBar.progress = usage
+                }
+                lastIdle = idle
+                lastTotal = total
+            }
+        } catch (_: Exception) {
+            cpuText.text = "Không khả dụng"
+        }
+
+        try {
+            val manager =
+                getSystemService(Context.ACTIVITY_SERVICE)
+                    as android.app.ActivityManager
+            val info = android.app.ActivityManager.MemoryInfo()
+            manager.getMemoryInfo(info)
+
+            val used = (info.totalMem - info.availMem) / (1024 * 1024)
+            val total = info.totalMem / (1024 * 1024)
+            ramText.text = "RAM: $used / $total MB"
+        } catch (_: Exception) {
+            ramText.text = "RAM: không khả dụng"
+        }
+
+        try {
+            val intent = registerReceiver(
+                null,
+                IntentFilter(Intent.ACTION_BATTERY_CHANGED)
+            )
+            if (intent != null) {
+                val level = intent.getIntExtra(
+                    BatteryManager.EXTRA_LEVEL, -1
+                )
+                val scale = intent.getIntExtra(
+                    BatteryManager.EXTRA_SCALE, 100
+                )
+                val pct = if (level >= 0 && scale > 0) {
+                    level * 100 / scale
+                } else -1
+
+                val temp = intent.getIntExtra(
+                    BatteryManager.EXTRA_TEMPERATURE, -1
+                ) / 10.0
+
+                batteryText.text =
+                    if (pct >= 0) "Pin: $pct%" else "Pin: không khả dụng"
+
+                tempText.text =
+                    if (temp >= 0) "Nhiệt độ pin: $temp °C"
+                    else "Nhiệt độ pin: không khả dụng"
+            }
+        } catch (_: Exception) {
+            tempText.text = "Nhiệt độ pin: không khả dụng"
+        }
+
+        statusText.text = "Chế độ: " +
+            getSharedPreferences("settings", MODE_PRIVATE)
+                .getString("mode", "Cân bằng")
+    }
+}
